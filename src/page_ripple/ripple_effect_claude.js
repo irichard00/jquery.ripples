@@ -291,8 +291,19 @@ class PageRipple {
                 /* info.g is the velocity */
                 info.g += (average - info.r) * 2.0;
 
-                /* Damping to gradually reduce the wave */
-                info.g *= 0.995;
+                /* Edge damping to absorb waves at boundaries (prevent bounce-back) */
+                /* Calculate distance from edges (0.0 at edge, 1.0 at center) */
+                float edgeDistance = min(
+                    min(coord.x, 1.0 - coord.x),
+                    min(coord.y, 1.0 - coord.y)
+                );
+
+                /* Create damping zone near edges (0.05 = 5% of texture size) */
+                float edgeDamping = smoothstep(0.0, 0.05, edgeDistance);
+
+                /* Apply stronger damping near edges */
+                float damping = mix(0.85, 0.995, edgeDamping);
+                info.g *= damping;
 
                 /* Apply velocity to height */
                 info.r += info.g;
