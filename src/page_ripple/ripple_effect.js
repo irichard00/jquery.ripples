@@ -221,6 +221,7 @@ var defaultOptions = {
 	resolution: 256,
 	dropRadius: 14,
 	perturbance: 0.06,
+	iterationsPerStep: 2,
 	crossOrigin: '',
 	canvasPosition: 'auto',
 	canvasZIndex: null,
@@ -249,6 +250,7 @@ class RippleEffect {
 		this.textureDelta = new Float32Array([1 / this.resolution, 1 / this.resolution]);
 		this.perturbance = options.perturbance;
 		this.dropRadius = options.dropRadius;
+		this.iterationsPerStep = Math.max(1, Math.min(4, Math.round(options.iterationsPerStep || 1)));
 		this.undulateActive = false;
 		this.undulateAmplitude = 0;
 		this.undulatePhase = 0;
@@ -436,7 +438,10 @@ class RippleEffect {
 		}
 
 		if (this.running) {
-			this.update();
+			var iterations = this.iterationsPerStep || 1;
+			for (var i = 0; i < iterations; i++) {
+				this.update();
+			}
 
 			gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
@@ -644,7 +649,7 @@ class RippleEffect {
 					'texture2D(texture, coord + dy).r',
 				') * 0.25;',
 				'// Increase propagation speed by amplifying the displacement delta',
-				'info.g += (average - info.r) * 2.4;',
+				'info.g += (average - info.r) * 2.0;',
 				'info.g *= 0.997;',
 				'info.r += info.g;',
 				'// Aggressively absorb energy near edges so waves dissipate outwards',
@@ -986,6 +991,9 @@ class RippleEffect {
 			case 'perturbance':
 			case 'crossOrigin':
 				this[property] = value;
+				break;
+			case 'iterationsPerStep':
+				this.iterationsPerStep = Math.max(1, Math.min(4, Math.round(value)));
 				break;
 			case 'imageUrl':
 				this.imageUrl = value;
