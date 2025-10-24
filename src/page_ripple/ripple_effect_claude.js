@@ -25,6 +25,7 @@ class PageRipple {
         this.destroyed = false;
         this.undulating = false;
         this.undulateStartTime = 0;
+        this.updateCounter = 0; // For 50% speed increase (1.5x updates per frame)
 
         // Create overlay canvas
         this._createCanvas();
@@ -477,6 +478,9 @@ class PageRipple {
         this._computeTextureBoundaries();
 
         if (this.running || this.undulating) {
+            // Run update 3x per frame for triple speed
+            this._update();
+            this._update();
             this._update();
         }
 
