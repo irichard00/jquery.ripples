@@ -646,11 +646,11 @@ class RippleEffect {
 				'info.g += (average - info.r) * 2.0;',
 				'info.g *= 0.997;',
 				'info.r += info.g;',
-				'// Fade ripple energy near borders to prevent bounce-back',
+				'// Aggressively absorb energy near edges so waves dissipate outwards',
 				'float borderDistance = min(min(coord.x, 1.0 - coord.x), min(coord.y, 1.0 - coord.y));',
-				'float edgeAttenuation = smoothstep(0.0, 0.02, borderDistance);',
-				'info.r *= edgeAttenuation;',
-				'info.g *= edgeAttenuation;',
+				'float edgeAttenuation = smoothstep(0.0, 0.12, borderDistance);',
+				'info.r *= edgeAttenuation * edgeAttenuation;',
+				'info.g *= edgeAttenuation * edgeAttenuation;',
 				'gl_FragColor = info;',
 			'}'
 		].join('\n'));
