@@ -1,0 +1,610 @@
+/**
+ * PageRipple - Vanilla JavaScript water ripple effect
+ * Converted from jQuery.ripples to work on full page overlay
+ */
+
+class PageRipple {
+    constructor(options = {}) {
+        this.config = this._loadConfig();
+        if (!this.config) {
+            throw new Error('Your browser does not support WebGL, the OES_texture_float extension or rendering to floating point textures.');
+        }
+
+        // Default options
+        this.options = {
+            resolution: options.resolution || 256,
+            dropRadius: options.dropRadius || 20,
+            perturbance: options.perturbance || 0.03,
+            imageUrl: options.imageUrl || null,
+            ...options
+        };
+
+        // State
+        this.running = false;
+        this.visible = false;
+        this.destroyed = false;
+        this.undulating = false;
+        this.undulateStartTime = 0;
+
+        // Create overlay canvas
+        this._createCanvas();
+        this._initWebGL();
+        this._initShaders();
+        this._initTexture();
+        this._setTransparentTexture();
+
+        // Load background image if provided
+        if (this.options.imageUrl) {
+            this._loadImage(this.options.imageUrl);
+        }
+
+        // Start animation loop
+        this._startAnimation();
+    }
+
+    _loadConfig() {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            return null;
+        }
+
+        // Load extensions
+        const extensions = {};
+        ['OES_texture_float', 'OES_texture_half_float', 'OES_texture_float_linear', 'OES_texture_half_float_linear']
+            .forEach(name => {
+                const extension = gl.getExtension(name);
+                if (extension) {
+                    extensions[name] = extension;
+                }
+            });
+
+        if (!extensions.OES_texture_float) {
+            return null;
+        }
+
+        const configs = [];
+
+        const createConfig = (type, glType, arrayType) => {
+            const name = 'OES_texture_' + type;
+            const nameLinear = name + '_linear';
+            const linearSupport = nameLinear in extensions;
+            const configExtensions = [name];
+
+            if (linearSupport) {
+                configExtensions.push(nameLinear);
+            }
+
+            return {
+                type: glType,
+                arrayType: arrayType,
+                linearSupport: linearSupport,
+                extensions: configExtensions
+            };
+        };
+
+        configs.push(createConfig('float', gl.FLOAT, Float32Array));
+
+        if (extensions.OES_texture_half_float) {
+            configs.push(
+                createConfig('half_float', extensions.OES_texture_half_float.HALF_FLOAT_OES, null)
+            );
+        }
+
+        // Test rendering to texture
+        const texture = gl.createTexture();
+        const framebuffer = gl.createFramebuffer();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        let config = null;
+
+        for (let i = 0; i < configs.length; i++) {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 32, 32, 0, gl.RGBA, configs[i].type, null);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+                config = configs[i];
+                break;
+            }
+        }
+
+        return config;
+    }
+
+    _createCanvas() {
+        // Create overlay canvas
+        this.canvas = document.createElement('canvas');
+        this.canvas.style.position = 'fixed';
+        this.canvas.style.top = '0';
+        this.canvas.style.left = '0';
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.pointerEvents = 'none';
+        this.canvas.style.zIndex = '9999';
+        this.canvas.style.display = 'none';
+
+        document.body.appendChild(this.canvas);
+
+        this._updateSize();
+
+        // Handle window resize
+        this._resizeHandler = () => this._updateSize();
+        window.addEventListener('resize', this._resizeHandler);
+    }
+
+    _initWebGL() {
+        this.gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
+
+        if (!this.gl) {
+            throw new Error('WebGL not supported');
+        }
+
+        // Load extensions
+        this.config.extensions.forEach(name => {
+            this.gl.getExtension(name);
+        });
+
+        // Init render targets for ripple data
+        this.textures = [];
+        this.framebuffers = [];
+        this.bufferWriteIndex = 0;
+        this.bufferReadIndex = 1;
+
+        const resolution = this.options.resolution;
+        const arrayType = this.config.arrayType;
+        const textureData = arrayType ? new arrayType(resolution * resolution * 4) : null;
+
+        for (let i = 0; i < 2; i++) {
+            const texture = this.gl.createTexture();
+            const framebuffer = this.gl.createFramebuffer();
+
+            this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, framebuffer);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+
+            const filter = this.config.linearSupport ? this.gl.LINEAR : this.gl.NEAREST;
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, filter);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, filter);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+            this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, resolution, resolution, 0, this.gl.RGBA, this.config.type, textureData);
+
+            this.gl.framebufferTexture2D(this.gl.FRAMEBUFFER, this.gl.COLOR_ATTACHMENT0, this.gl.TEXTURE_2D, texture, 0);
+
+            this.textures.push(texture);
+            this.framebuffers.push(framebuffer);
+        }
+
+        // Create quad buffer
+        this.quad = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.quad);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+            +1, -1,
+            +1, +1,
+            -1, +1
+        ]), this.gl.STATIC_DRAW);
+
+        // Set clear color and blend mode
+        this.gl.clearColor(0, 0, 0, 0);
+        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+        this.textureDelta = new Float32Array([1 / resolution, 1 / resolution]);
+    }
+
+    _initShaders() {
+        const gl = this.gl;
+
+        const vertexShader = `
+            attribute vec2 vertex;
+            varying vec2 coord;
+            void main() {
+                coord = vertex * 0.5 + 0.5;
+                gl_Position = vec4(vertex, 0.0, 1.0);
+            }
+        `;
+
+        // Drop shader
+        this.dropProgram = this._createProgram(vertexShader, `
+            precision highp float;
+            const float PI = 3.141592653589793;
+            uniform sampler2D texture;
+            uniform vec2 center;
+            uniform float radius;
+            uniform float strength;
+            varying vec2 coord;
+
+            void main() {
+                vec4 info = texture2D(texture, coord);
+                float drop = max(0.0, 1.0 - length(center * 0.5 + 0.5 - coord) / radius);
+                drop = 0.5 - cos(drop * PI) * 0.5;
+                info.r += drop * strength;
+                gl_FragColor = info;
+            }
+        `);
+
+        // Update shader
+        this.updateProgram = this._createProgram(vertexShader, `
+            precision highp float;
+            uniform sampler2D texture;
+            uniform vec2 delta;
+            varying vec2 coord;
+
+            void main() {
+                vec4 info = texture2D(texture, coord);
+                vec2 dx = vec2(delta.x, 0.0);
+                vec2 dy = vec2(0.0, delta.y);
+
+                float average = (
+                    texture2D(texture, coord - dx).r +
+                    texture2D(texture, coord - dy).r +
+                    texture2D(texture, coord + dx).r +
+                    texture2D(texture, coord + dy).r
+                ) * 0.25;
+
+                info.g += (average - info.r) * 2.0;
+                info.g *= 0.995;
+                info.r += info.g;
+
+                gl_FragColor = info;
+            }
+        `);
+        gl.uniform2fv(this.updateProgram.locations.delta, this.textureDelta);
+
+        // Render shader
+        this.renderProgram = this._createProgram(`
+            precision highp float;
+            attribute vec2 vertex;
+            uniform vec2 topLeft;
+            uniform vec2 bottomRight;
+            uniform vec2 containerRatio;
+            varying vec2 ripplesCoord;
+            varying vec2 backgroundCoord;
+
+            void main() {
+                backgroundCoord = mix(topLeft, bottomRight, vertex * 0.5 + 0.5);
+                backgroundCoord.y = 1.0 - backgroundCoord.y;
+                ripplesCoord = vec2(vertex.x, -vertex.y) * containerRatio * 0.5 + 0.5;
+                gl_Position = vec4(vertex.x, -vertex.y, 0.0, 1.0);
+            }
+        `, `
+            precision highp float;
+            uniform sampler2D samplerBackground;
+            uniform sampler2D samplerRipples;
+            uniform vec2 delta;
+            uniform float perturbance;
+            varying vec2 ripplesCoord;
+            varying vec2 backgroundCoord;
+
+            void main() {
+                float height = texture2D(samplerRipples, ripplesCoord).r;
+                float heightX = texture2D(samplerRipples, vec2(ripplesCoord.x + delta.x, ripplesCoord.y)).r;
+                float heightY = texture2D(samplerRipples, vec2(ripplesCoord.x, ripplesCoord.y + delta.y)).r;
+                vec3 dx = vec3(delta.x, heightX - height, 0.0);
+                vec3 dy = vec3(0.0, heightY - height, delta.y);
+                vec2 offset = -normalize(cross(dy, dx)).xz;
+                float specular = pow(max(0.0, dot(offset, normalize(vec2(-0.6, 1.0)))), 4.0);
+                gl_FragColor = texture2D(samplerBackground, backgroundCoord + offset * perturbance) + specular;
+            }
+        `);
+        gl.uniform2fv(this.renderProgram.locations.delta, this.textureDelta);
+
+        this.renderProgram.uniforms = {
+            topLeft: new Float32Array([0, 0]),
+            bottomRight: new Float32Array([1, 1]),
+            containerRatio: new Float32Array([1, 1])
+        };
+    }
+
+    _createProgram(vertexSource, fragmentSource) {
+        const gl = this.gl;
+
+        const compileShader = (type, source) => {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                throw new Error('Shader compile error: ' + gl.getShaderInfoLog(shader));
+            }
+            return shader;
+        };
+
+        const program = {};
+        program.id = gl.createProgram();
+        gl.attachShader(program.id, compileShader(gl.VERTEX_SHADER, vertexSource));
+        gl.attachShader(program.id, compileShader(gl.FRAGMENT_SHADER, fragmentSource));
+        gl.linkProgram(program.id);
+
+        if (!gl.getProgramParameter(program.id, gl.LINK_STATUS)) {
+            throw new Error('Program link error: ' + gl.getProgramInfoLog(program.id));
+        }
+
+        program.uniforms = {};
+        program.locations = {};
+        gl.useProgram(program.id);
+        gl.enableVertexAttribArray(0);
+
+        const regex = /uniform (\w+) (\w+)/g;
+        const shaderCode = vertexSource + fragmentSource;
+        let match;
+
+        while ((match = regex.exec(shaderCode)) !== null) {
+            const name = match[2];
+            program.locations[name] = gl.getUniformLocation(program.id, name);
+        }
+
+        return program;
+    }
+
+    _initTexture() {
+        this.backgroundTexture = this.gl.createTexture();
+        this.gl.bindTexture(this.gl.TEXTURE_2D, this.backgroundTexture);
+        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 1);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+    }
+
+    _setTransparentTexture() {
+        const transparentPixels = this._createImageData(32, 32);
+        this.gl.bindTexture(this.gl.TEXTURE_2D, this.backgroundTexture);
+        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, transparentPixels);
+    }
+
+    _createImageData(width, height) {
+        try {
+            return new ImageData(width, height);
+        } catch (e) {
+            const canvas = document.createElement('canvas');
+            return canvas.getContext('2d').createImageData(width, height);
+        }
+    }
+
+    _loadImage(url) {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+
+        image.onload = () => {
+            const isPowerOfTwo = (x) => (x & (x - 1)) === 0;
+            const wrapping = (isPowerOfTwo(image.width) && isPowerOfTwo(image.height))
+                ? this.gl.REPEAT
+                : this.gl.CLAMP_TO_EDGE;
+
+            this.gl.bindTexture(this.gl.TEXTURE_2D, this.backgroundTexture);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, wrapping);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, wrapping);
+            this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, image);
+
+            this.backgroundWidth = image.width;
+            this.backgroundHeight = image.height;
+        };
+
+        image.onerror = () => {
+            this._setTransparentTexture();
+        };
+
+        image.src = url;
+    }
+
+    _updateSize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+
+    _startAnimation() {
+        const animate = () => {
+            if (!this.destroyed) {
+                this._step();
+                requestAnimationFrame(animate);
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+
+    _step() {
+        if (!this.visible) {
+            return;
+        }
+
+        this._computeTextureBoundaries();
+
+        if (this.running || this.undulating) {
+            this._update();
+        }
+
+        this._render();
+    }
+
+    _computeTextureBoundaries() {
+        const maxSide = Math.max(this.canvas.width, this.canvas.height);
+
+        this.renderProgram.uniforms.topLeft[0] = 0;
+        this.renderProgram.uniforms.topLeft[1] = 0;
+        this.renderProgram.uniforms.bottomRight[0] = 1;
+        this.renderProgram.uniforms.bottomRight[1] = 1;
+        this.renderProgram.uniforms.containerRatio[0] = this.canvas.width / maxSide;
+        this.renderProgram.uniforms.containerRatio[1] = this.canvas.height / maxSide;
+    }
+
+    _drawQuad() {
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.quad);
+        this.gl.vertexAttribPointer(0, 2, this.gl.FLOAT, false, 0, 0);
+        this.gl.drawArrays(this.gl.TRIANGLE_FAN, 0, 4);
+    }
+
+    _render() {
+        const gl = this.gl;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.enable(gl.BLEND);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.useProgram(this.renderProgram.id);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.backgroundTexture);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
+
+        gl.uniform1f(this.renderProgram.locations.perturbance, this.options.perturbance);
+        gl.uniform2fv(this.renderProgram.locations.topLeft, this.renderProgram.uniforms.topLeft);
+        gl.uniform2fv(this.renderProgram.locations.bottomRight, this.renderProgram.uniforms.bottomRight);
+        gl.uniform2fv(this.renderProgram.locations.containerRatio, this.renderProgram.uniforms.containerRatio);
+        gl.uniform1i(this.renderProgram.locations.samplerBackground, 0);
+        gl.uniform1i(this.renderProgram.locations.samplerRipples, 1);
+
+        this._drawQuad();
+        gl.disable(gl.BLEND);
+    }
+
+    _update() {
+        const gl = this.gl;
+
+        gl.viewport(0, 0, this.options.resolution, this.options.resolution);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[this.bufferWriteIndex]);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[this.bufferReadIndex]);
+
+        gl.useProgram(this.updateProgram.id);
+        this._drawQuad();
+        this._swapBufferIndices();
+    }
+
+    _swapBufferIndices() {
+        this.bufferWriteIndex = 1 - this.bufferWriteIndex;
+        this.bufferReadIndex = 1 - this.bufferReadIndex;
+    }
+
+    // Public API
+
+    /**
+     * Turn on the ripple effect
+     */
+    turnOn() {
+        this.visible = true;
+        this.running = true;
+        this.canvas.style.display = 'block';
+    }
+
+    /**
+     * Turn off the ripple effect
+     */
+    turnOff() {
+        this.visible = false;
+        this.running = false;
+        this.canvas.style.display = 'none';
+    }
+
+    /**
+     * Drop a ripple at specific coordinates
+     * @param {number} x - X coordinate in pixels
+     * @param {number} y - Y coordinate in pixels
+     * @param {number} radius - Optional radius (default: dropRadius from options)
+     * @param {number} strength - Optional strength (default: 0.14)
+     */
+    drop(x, y, radius, strength) {
+        const gl = this.gl;
+
+        radius = radius || this.options.dropRadius;
+        strength = strength !== undefined ? strength : 0.14;
+
+        const longestSide = Math.max(this.canvas.width, this.canvas.height);
+        radius = radius / longestSide;
+
+        const dropPosition = new Float32Array([
+            (2 * x - this.canvas.width) / longestSide,
+            (this.canvas.height - 2 * y) / longestSide
+        ]);
+
+        gl.viewport(0, 0, this.options.resolution, this.options.resolution);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[this.bufferWriteIndex]);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[this.bufferReadIndex]);
+
+        gl.useProgram(this.dropProgram.id);
+        gl.uniform2fv(this.dropProgram.locations.center, dropPosition);
+        gl.uniform1f(this.dropProgram.locations.radius, radius);
+        gl.uniform1f(this.dropProgram.locations.strength, strength);
+
+        this._drawQuad();
+        this._swapBufferIndices();
+    }
+
+    /**
+     * Create an undulating effect across the whole page for 5 seconds
+     */
+    undulate() {
+        if (this.undulating) {
+            return; // Already undulating
+        }
+
+        this.undulating = true;
+        this.undulateStartTime = Date.now();
+
+        if (!this.visible) {
+            this.turnOn();
+        }
+
+        const createWave = () => {
+            if (!this.undulating) return;
+
+            const elapsed = Date.now() - this.undulateStartTime;
+            const duration = 5000; // 5 seconds
+
+            if (elapsed >= duration) {
+                this.undulating = false;
+                return;
+            }
+
+            // Create multiple ripples in a wave pattern
+            const width = this.canvas.width;
+            const height = this.canvas.height;
+            const numWaves = 5;
+
+            for (let i = 0; i < numWaves; i++) {
+                const phase = (elapsed / 200 + i * 100) % width;
+                const y = height / 2 + Math.sin(elapsed / 300 + i) * height / 4;
+                this.drop(phase, y, 30, 0.03);
+            }
+
+            // Also create some random gentle ripples
+            if (Math.random() < 0.3) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                this.drop(x, y, 25, 0.02);
+            }
+
+            setTimeout(createWave, 50);
+        };
+
+        createWave();
+    }
+
+    /**
+     * Destroy the ripple effect and clean up
+     */
+    destroy() {
+        this.destroyed = true;
+
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler);
+        }
+
+        if (this.canvas && this.canvas.parentNode) {
+            this.canvas.parentNode.removeChild(this.canvas);
+        }
+    }
+}
+
+// Export for use
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = PageRipple;
+}

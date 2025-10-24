@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Ripple Effect Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            background-image: url('https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        .controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 10000;
+            min-width: 300px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .switch-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+
+        .coordinate-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #1976D2;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .undulate-btn {
+            background-color: #4CAF50;
+            margin-top: 10px;
+        }
+
+        .undulate-btn:hover {
+            background-color: #45a049;
+        }
+
+        .content {
+            position: relative;
+            z-index: 1;
+            padding: 40px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.2em;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 500px;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>Page Ripple Effect Demo</h1>
+        <div class="info-box">
+            <p>
+                This page demonstrates a water ripple effect overlay. Use the controls on the right to:
+            </p>
+            <ul style="margin-top: 10px; padding-left: 20px;">
+                <li>Toggle the ripple effect on/off</li>
+                <li>Create ripples at specific coordinates (X, Y)</li>
+                <li>Trigger an undulating wave effect across the whole page</li>
+            </ul>
+            <p style="margin-top: 10px; font-size: 0.9em; color: #aaa;">
+                Note: Mouse cursor interactions are disabled. Ripples can only be triggered via coordinate input or the undulate button.
+            </p>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="rippleToggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="switch-label">Ripple Effect</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Create Ripple at Coordinates:</label>
+            <div class="coordinate-inputs">
+                <div>
+                    <input type="number" id="xCoord" placeholder="X" value="500">
+                </div>
+                <div>
+                    <input type="number" id="yCoord" placeholder="Y" value="300">
+                </div>
+            </div>
+            <button id="createRipple">Create Ripple</button>
+        </div>
+
+        <div class="control-group">
+            <button class="undulate-btn" id="undulateBtn">Undulate</button>
+        </div>
+    </div>
+
+    <script src="ripple_effect_claude.js"></script>
+    <script>
+        // Initialize the ripple effect
+        let rippleEffect = null;
+
+        try {
+            rippleEffect = new PageRipple({
+                resolution: 256,
+                dropRadius: 20,
+                perturbance: 0.03
+            });
+
+            // Toggle switch
+            const toggle = document.getElementById('rippleToggle');
+            toggle.addEventListener('change', function() {
+                if (this.checked) {
+                    rippleEffect.turnOn();
+                } else {
+                    rippleEffect.turnOff();
+                }
+            });
+
+            // Create ripple at coordinates
+            const createRippleBtn = document.getElementById('createRipple');
+            const xCoordInput = document.getElementById('xCoord');
+            const yCoordInput = document.getElementById('yCoord');
+
+            createRippleBtn.addEventListener('click', function() {
+                const x = parseInt(xCoordInput.value) || 0;
+                const y = parseInt(yCoordInput.value) || 0;
+
+                // Turn on ripple effect if it's not already on
+                if (!toggle.checked) {
+                    toggle.checked = true;
+                    rippleEffect.turnOn();
+                }
+
+                rippleEffect.drop(x, y);
+            });
+
+            // Undulate button
+            const undulateBtn = document.getElementById('undulateBtn');
+            undulateBtn.addEventListener('click', function() {
+                // Turn on ripple effect if it's not already on
+                if (!toggle.checked) {
+                    toggle.checked = true;
+                    rippleEffect.turnOn();
+                }
+
+                rippleEffect.undulate();
+            });
+
+        } catch (error) {
+            console.error('Failed to initialize ripple effect:', error);
+            alert('Your browser does not support WebGL or the required extensions.');
+        }
+    </script>
+</body>
+</html>
