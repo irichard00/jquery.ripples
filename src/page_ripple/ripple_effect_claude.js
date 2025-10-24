@@ -730,7 +730,7 @@ class PageRipple {
     }
 
     /**
-     * Create an undulating effect across the whole page for 5 seconds
+     * Create a one-time burst of random ripples across the page that fade out naturally
      */
     undulate() {
         if (this.undulating) {
@@ -738,45 +738,37 @@ class PageRipple {
         }
 
         this.undulating = true;
-        this.undulateStartTime = Date.now();
 
         if (!this.visible) {
             this.turnOn();
         }
 
-        const createWave = () => {
-            if (!this.undulating) return;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const numRipples = 20;
+        const maxDelay = 500; // 0.5 seconds range for staggering
 
-            const elapsed = Date.now() - this.undulateStartTime;
-            const duration = 5000; // 5 seconds
+        // Generate random points and trigger them with staggered timing
+        for (let i = 0; i < numRipples; i++) {
+            const x = Math.random() * width;
+            const y = Math.random() * height;
+            const delay = Math.random() * maxDelay;
+            const radius = 20 + Math.random() * 30; // Random radius between 20-50
+            const strength = 0.08 + Math.random() * 0.08; // Random strength between 0.08-0.16
 
-            if (elapsed >= duration) {
-                this.undulating = false;
-                return;
-            }
+            setTimeout(() => {
+                if (this.undulating) {
+                    this.drop(x, y, radius, strength);
+                }
+            }, delay);
+        }
 
-            // Create multiple ripples in a wave pattern
-            const width = this.canvas.width;
-            const height = this.canvas.height;
-            const numWaves = 5;
-
-            for (let i = 0; i < numWaves; i++) {
-                const phase = (elapsed / 200 + i * 100) % width;
-                const y = height / 2 + Math.sin(elapsed / 300 + i) * height / 4;
-                this.drop(phase, y, 30, 0.03);
-            }
-
-            // Also create some random gentle ripples
-            if (Math.random() < 0.3) {
-                const x = Math.random() * width;
-                const y = Math.random() * height;
-                this.drop(x, y, 25, 0.02);
-            }
-
-            setTimeout(createWave, 50);
-        };
-
-        createWave();
+        // After all ripples are triggered, mark undulation as complete and let them fade naturally
+        // The fade duration is longer to let ripples fully dissipate
+        setTimeout(() => {
+            this.undulating = false;
+            // Ripples will naturally fade due to damping in the shader
+        }, maxDelay + 3000); // Wait for all ripples to trigger + 3 seconds to fade
     }
 
     /**
