@@ -221,7 +221,6 @@ var defaultOptions = {
 	resolution: 256,
 	dropRadius: 14,
 	perturbance: 0.06,
-	interactive: true,
 	crossOrigin: '',
 	canvasPosition: 'auto',
 	canvasZIndex: null,
@@ -246,7 +245,6 @@ class RippleEffect {
 		this.element = el;
 		this.element.classList.add(HOST_CLASS);
 
-		this.interactive = options.interactive;
 		this.resolution = options.resolution;
 		this.textureDelta = new Float32Array([1 / this.resolution, 1 / this.resolution]);
 		this.perturbance = options.perturbance;
@@ -354,10 +352,6 @@ class RippleEffect {
 		this.undulateBaseAmplitude = 0;
 		this.undulateBaseStrength = 0;
 
-		if (this.interactive) {
-			this.setupPointerEvents();
-		}
-
 		var that = this;
 		function step() {
 			if (!that.destroyed) {
@@ -367,54 +361,6 @@ class RippleEffect {
 		}
 
 		requestAnimationFrame(step);
-	}
-
-	setupPointerEvents() {
-		this.handlePointerMove = this.handlePointerMove.bind(this);
-		this.handlePointerDown = this.handlePointerDown.bind(this);
-		this.handlePointerUp = this.handlePointerUp.bind(this);
-
-		this.element.addEventListener('pointermove', this.handlePointerMove);
-		this.element.addEventListener('pointerdown', this.handlePointerDown);
-		window.addEventListener('pointerup', this.handlePointerUp);
-	}
-
-	teardownPointerEvents() {
-		if (!this.handlePointerDown) {
-			return;
-		}
-
-		this.element.removeEventListener('pointermove', this.handlePointerMove);
-		this.element.removeEventListener('pointerdown', this.handlePointerDown);
-		window.removeEventListener('pointerup', this.handlePointerUp);
-
-		this.handlePointerMove = null;
-		this.handlePointerDown = null;
-		this.handlePointerUp = null;
-	}
-
-	handlePointerDown(event) {
-		if (!this.visible || !this.running) {
-			return;
-		}
-		var rect = this.element.getBoundingClientRect();
-		var x = event.clientX - rect.left;
-		var y = event.clientY - rect.top;
-		this.drop(x, y, this.dropRadius * 1.5, 0.6);
-	}
-
-	handlePointerMove(event) {
-		if (!this.visible || !this.running || event.pointerType === 'touch' && event.pressure === 0) {
-			return;
-		}
-		var rect = this.element.getBoundingClientRect();
-		var x = event.clientX - rect.left;
-		var y = event.clientY - rect.top;
-		this.drop(x, y, this.dropRadius * 0.5, 0.2);
-	}
-
-	handlePointerUp() {
-		// no-op placeholder to keep teardown symmetrical
 	}
 
 	loadImage() {
@@ -1004,9 +950,6 @@ class RippleEffect {
 		gl = null;
 
 		window.removeEventListener('resize', this.updateSize);
-		if (this.interactive) {
-			this.teardownPointerEvents();
-		}
 
 		if (this.canvas.parentNode) {
 			this.canvas.parentNode.removeChild(this.canvas);
@@ -1040,7 +983,6 @@ class RippleEffect {
 		switch (property) {
 			case 'dropRadius':
 			case 'perturbance':
-			case 'interactive':
 			case 'crossOrigin':
 				this[property] = value;
 				break;
@@ -1065,8 +1007,7 @@ function initPageRippleDemo(config) {
 		ripple = new RippleEffect(target, {
 			canvasPosition: 'fixed',
 			canvasZIndex: (config && config.zIndex != null) ? config.zIndex : 9990,
-			hideCssBackground: (config && config.hideCssBackground !== undefined) ? config.hideCssBackground : false,
-			interactive: config && config.interactive !== undefined ? config.interactive : true
+			hideCssBackground: (config && config.hideCssBackground !== undefined) ? config.hideCssBackground : false
 		});
 	}
 	catch (error) {
