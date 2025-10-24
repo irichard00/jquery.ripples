@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Native Ripple Effect Demo</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+			color: #f9f9f9;
+			background: url('./img/bg.jpg') center / cover no-repeat fixed;
+			display: flex;
+			align-items: flex-end;
+			justify-content: center;
+		}
+
+		main {
+			text-align: center;
+			padding: 4rem 1rem 6rem;
+			max-width: 720px;
+		}
+
+		main h1 {
+			font-size: 2.5rem;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			margin: 0 0 1rem;
+			text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+		}
+
+		main p {
+			margin: 0;
+			font-size: 1.1rem;
+			text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+		}
+
+			.control-panel {
+				position: fixed;
+				top: 2rem;
+				right: 2rem;
+				width: 220px;
+				padding: 1rem 1.2rem;
+				border-radius: 0.5rem;
+				background: rgba(12, 13, 32, 0.75);
+				box-shadow: 0 16px 38px rgba(0, 0, 0, 0.4);
+				backdrop-filter: blur(8px);
+				display: flex;
+				flex-direction: column;
+				gap: 0.75rem;
+				z-index: 10000;
+		}
+
+		.control-panel button {
+			width: 100%;
+			padding: 0.6rem 0.8rem;
+			border: none;
+			border-radius: 0.4rem;
+			font-size: 1rem;
+			font-weight: 600;
+			text-transform: uppercase;
+			cursor: pointer;
+			color: #fff;
+			background: linear-gradient(135deg, #6a5acd, #48c6ef);
+			transition: opacity 0.3s ease, transform 0.3s ease;
+		}
+
+		.control-panel button:active {
+			transform: scale(0.98);
+		}
+
+		.control-panel form {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 0.6rem;
+		}
+
+		.control-panel label {
+			display: flex;
+			flex-direction: column;
+			font-size: 0.85rem;
+			text-transform: uppercase;
+			color: rgba(255, 255, 255, 0.7);
+			gap: 0.35rem;
+		}
+
+		.control-panel input[type="number"] {
+			width: 100%;
+			padding: 0.4rem 0.5rem;
+			border-radius: 0.35rem;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			background: rgba(11, 11, 22, 0.6);
+			color: #fff;
+		}
+
+		.control-panel input[type="number"]::placeholder {
+			color: rgba(255, 255, 255, 0.35);
+		}
+
+		.control-panel .submit-row {
+			grid-column: 1 / -1;
+		}
+
+		.control-panel .submit-row button {
+			background: linear-gradient(135deg, #ff6a6a, #fcae45);
+		}
+	</style>
+</head>
+<body>
+	<div class="control-panel">
+		<button type="button" data-ripple-toggle>Turn On</button>
+		<button type="button" data-ripple-undulate>Undulate</button>
+		<form data-ripple-form>
+			<label>
+				X (px)
+				<input type="number" min="0" step="10" placeholder="e.g. 200" data-ripple-input="x">
+			</label>
+			<label>
+				Y (px)
+				<input type="number" min="0" step="10" placeholder="e.g. 300" data-ripple-input="y">
+			</label>
+			<div class="submit-row">
+				<button type="submit">Trigger Ripple</button>
+			</div>
+		</form>
+	</div>
+
+	<main>
+		<h1>Ripple Playground</h1>
+		<p>Toggle the ripples and experiment with manual coordinates to splash the surface anywhere on the page.</p>
+	</main>
+
+	<script type="module" src="../src/page_ripple/ripple_effect.js"></script>
+</body>
+</html>
