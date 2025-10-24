@@ -33,13 +33,43 @@ class PageRipple {
         this._initTexture();
         this._setTransparentTexture();
 
-        // Load background image if provided
-        if (this.options.imageUrl) {
-            this._loadImage(this.options.imageUrl);
-        }
+        // Load background image
+        this._loadBackgroundImage();
 
         // Start animation loop
         this._startAnimation();
+    }
+
+    _loadBackgroundImage() {
+        // Try to get background image from options or from page CSS
+        let imageUrl = this.options.imageUrl;
+
+        if (!imageUrl) {
+            // Try to extract from body background
+            const bodyBg = window.getComputedStyle(document.body).backgroundImage;
+            imageUrl = this._extractUrl(bodyBg);
+
+            // If not on body, try html element
+            if (!imageUrl) {
+                const htmlBg = window.getComputedStyle(document.documentElement).backgroundImage;
+                imageUrl = this._extractUrl(htmlBg);
+            }
+        }
+
+        if (imageUrl) {
+            this._loadImage(imageUrl);
+        } else {
+            // No background image found, use transparent
+            this._setTransparentTexture();
+        }
+    }
+
+    _extractUrl(value) {
+        if (!value || value === 'none') {
+            return null;
+        }
+        const urlMatch = /url\(["']?([^"']*)["']?\)/.exec(value);
+        return urlMatch ? urlMatch[1] : null;
     }
 
     _loadConfig() {
@@ -135,7 +165,13 @@ class PageRipple {
         this._updateSize();
 
         // Handle window resize
-        this._resizeHandler = () => this._updateSize();
+        this._resizeHandler = () => {
+            this._updateSize();
+            // Reload background image on resize to maintain quality
+            if (this.imageSource) {
+                this._loadImage(this.imageSource);
+            }
+        };
         window.addEventListener('resize', this._resizeHandler);
     }
 
@@ -229,7 +265,7 @@ class PageRipple {
             }
         `);
 
-        // Update shader
+        // Update shader - this simulates wave propagation
         this.updateProgram = this._createProgram(vertexShader, `
             precision highp float;
             uniform sampler2D texture;
@@ -237,7 +273,10 @@ class PageRipple {
             varying vec2 coord;
 
             void main() {
+                /* Get the current height and velocity */
                 vec4 info = texture2D(texture, coord);
+
+                /* Calculate the average of neighboring heights */
                 vec2 dx = vec2(delta.x, 0.0);
                 vec2 dy = vec2(0.0, delta.y);
 
@@ -248,8 +287,14 @@ class PageRipple {
                     texture2D(texture, coord + dy).r
                 ) * 0.25;
 
+                /* Apply wave equation: acceleration = average - current */
+                /* info.g is the velocity */
                 info.g += (average - info.r) * 2.0;
+
+                /* Damping to gradually reduce the wave */
                 info.g *= 0.995;
+
+                /* Apply velocity to height */
                 info.r += info.g;
 
                 gl_FragColor = info;
@@ -366,6 +411,8 @@ class PageRipple {
     }
 
     _loadImage(url) {
+        this.imageSource = url;
+
         const image = new Image();
         image.crossOrigin = 'anonymous';
 
@@ -382,6 +429,11 @@ class PageRipple {
 
             this.backgroundWidth = image.width;
             this.backgroundHeight = image.height;
+
+            // Store background size and position from CSS
+            this.backgroundSize = window.getComputedStyle(document.body).backgroundSize || 'cover';
+            this.backgroundPosition = window.getComputedStyle(document.body).backgroundPosition || 'center center';
+            this.backgroundAttachment = window.getComputedStyle(document.body).backgroundAttachment || 'scroll';
         };
 
         image.onerror = () => {
@@ -421,14 +473,138 @@ class PageRipple {
     }
 
     _computeTextureBoundaries() {
-        const maxSide = Math.max(this.canvas.width, this.canvas.height);
+        if (!this.backgroundWidth || !this.backgroundHeight) {
+            // No background loaded yet
+            const maxSide = Math.max(this.canvas.width, this.canvas.height);
+            this.renderProgram.uniforms.topLeft[0] = 0;
+            this.renderProgram.uniforms.topLeft[1] = 0;
+            this.renderProgram.uniforms.bottomRight[0] = 1;
+            this.renderProgram.uniforms.bottomRight[1] = 1;
+            this.renderProgram.uniforms.containerRatio[0] = this.canvas.width / maxSide;
+            this.renderProgram.uniforms.containerRatio[1] = this.canvas.height / maxSide;
+            return;
+        }
 
-        this.renderProgram.uniforms.topLeft[0] = 0;
-        this.renderProgram.uniforms.topLeft[1] = 0;
-        this.renderProgram.uniforms.bottomRight[0] = 1;
-        this.renderProgram.uniforms.bottomRight[1] = 1;
+        const backgroundSize = this.backgroundSize || 'cover';
+        const backgroundPosition = this._translateBackgroundPosition(this.backgroundPosition || 'center center');
+        const backgroundAttachment = this.backgroundAttachment || 'scroll';
+
+        // Container is the viewport for fixed attachment, or the canvas for scroll
+        const container = {
+            left: backgroundAttachment === 'fixed' ? window.pageXOffset : 0,
+            top: backgroundAttachment === 'fixed' ? window.pageYOffset : 0,
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        let backgroundWidth, backgroundHeight;
+
+        // Calculate background dimensions based on background-size
+        if (backgroundSize === 'cover') {
+            const scale = Math.max(container.width / this.backgroundWidth, container.height / this.backgroundHeight);
+            backgroundWidth = this.backgroundWidth * scale;
+            backgroundHeight = this.backgroundHeight * scale;
+        } else if (backgroundSize === 'contain') {
+            const scale = Math.min(container.width / this.backgroundWidth, container.height / this.backgroundHeight);
+            backgroundWidth = this.backgroundWidth * scale;
+            backgroundHeight = this.backgroundHeight * scale;
+        } else {
+            const sizes = backgroundSize.split(' ');
+            let bgWidth = sizes[0] || '';
+            let bgHeight = sizes[1] || bgWidth;
+
+            if (this._isPercentage(bgWidth)) {
+                backgroundWidth = container.width * parseFloat(bgWidth) / 100;
+            } else if (bgWidth !== 'auto') {
+                backgroundWidth = parseFloat(bgWidth);
+            }
+
+            if (this._isPercentage(bgHeight)) {
+                backgroundHeight = container.height * parseFloat(bgHeight) / 100;
+            } else if (bgHeight !== 'auto') {
+                backgroundHeight = parseFloat(bgHeight);
+            }
+
+            if (bgWidth === 'auto' && bgHeight === 'auto') {
+                backgroundWidth = this.backgroundWidth;
+                backgroundHeight = this.backgroundHeight;
+            } else {
+                if (bgWidth === 'auto') {
+                    backgroundWidth = this.backgroundWidth * (backgroundHeight / this.backgroundHeight);
+                }
+                if (bgHeight === 'auto') {
+                    backgroundHeight = this.backgroundHeight * (backgroundWidth / this.backgroundWidth);
+                }
+            }
+        }
+
+        // Calculate background position
+        let backgroundX = backgroundPosition[0];
+        let backgroundY = backgroundPosition[1];
+
+        if (this._isPercentage(backgroundX)) {
+            backgroundX = container.left + (container.width - backgroundWidth) * parseFloat(backgroundX) / 100;
+        } else {
+            backgroundX = container.left + parseFloat(backgroundX);
+        }
+
+        if (this._isPercentage(backgroundY)) {
+            backgroundY = container.top + (container.height - backgroundHeight) * parseFloat(backgroundY) / 100;
+        } else {
+            backgroundY = container.top + parseFloat(backgroundY);
+        }
+
+        // Calculate texture coordinates for the canvas
+        const canvasOffset = { left: 0, top: 0 };
+
+        this.renderProgram.uniforms.topLeft[0] = (canvasOffset.left - backgroundX) / backgroundWidth;
+        this.renderProgram.uniforms.topLeft[1] = (canvasOffset.top - backgroundY) / backgroundHeight;
+        this.renderProgram.uniforms.bottomRight[0] = this.renderProgram.uniforms.topLeft[0] + this.canvas.width / backgroundWidth;
+        this.renderProgram.uniforms.bottomRight[1] = this.renderProgram.uniforms.topLeft[1] + this.canvas.height / backgroundHeight;
+
+        const maxSide = Math.max(this.canvas.width, this.canvas.height);
         this.renderProgram.uniforms.containerRatio[0] = this.canvas.width / maxSide;
         this.renderProgram.uniforms.containerRatio[1] = this.canvas.height / maxSide;
+    }
+
+    _isPercentage(str) {
+        return str && str[str.length - 1] === '%';
+    }
+
+    _translateBackgroundPosition(value) {
+        const parts = value.split(' ');
+
+        if (parts.length === 1) {
+            switch (value) {
+                case 'center':
+                    return ['50%', '50%'];
+                case 'top':
+                    return ['50%', '0'];
+                case 'bottom':
+                    return ['50%', '100%'];
+                case 'left':
+                    return ['0', '50%'];
+                case 'right':
+                    return ['100%', '50%'];
+                default:
+                    return [value, '50%'];
+            }
+        } else {
+            return parts.map(part => {
+                switch (part) {
+                    case 'center':
+                        return '50%';
+                    case 'top':
+                    case 'left':
+                        return '0';
+                    case 'right':
+                    case 'bottom':
+                        return '100%';
+                    default:
+                        return part;
+                }
+            });
+        }
     }
 
     _drawQuad() {

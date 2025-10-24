@@ -187,15 +187,18 @@
         <h1>Page Ripple Effect Demo</h1>
         <div class="info-box">
             <p>
-                This page demonstrates a water ripple effect overlay. Use the controls on the right to:
+                This page demonstrates a realistic WebGL water ripple effect overlay that distorts the background image beneath it, creating the illusion of viewing content through water.
             </p>
-            <ul style="margin-top: 10px; padding-left: 20px;">
+            <p style="margin-top: 10px;">
+                <strong>Controls:</strong>
+            </p>
+            <ul style="margin-top: 5px; padding-left: 20px;">
                 <li>Toggle the ripple effect on/off</li>
-                <li>Create ripples at specific coordinates (X, Y)</li>
+                <li>Create ripples at specific coordinates (X, Y pixels from top-left)</li>
                 <li>Trigger an undulating wave effect across the whole page</li>
             </ul>
-            <p style="margin-top: 10px; font-size: 0.9em; color: #aaa;">
-                Note: Mouse cursor interactions are disabled. Ripples can only be triggered via coordinate input or the undulate button.
+            <p style="margin-top: 10px; font-size: 0.85em; color: #ccc;">
+                <strong>Note:</strong> The effect automatically captures and distorts the page's background image. Mouse cursor interactions are disabled - ripples can only be triggered via coordinate input or the undulate button.
             </p>
         </div>
     </div>
@@ -236,9 +239,9 @@
 
         try {
             rippleEffect = new PageRipple({
-                resolution: 256,
+                resolution: 512,
                 dropRadius: 20,
-                perturbance: 0.03
+                perturbance: 0.04
             });
 
             // Toggle switch
